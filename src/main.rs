@@ -17,7 +17,7 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
         let pattern = pattern.trim_matches(['[', ']']);
         let pattern = pattern.trim_start_matches(|c| c == '^');
         let negative = pattern.chars().collect::<Vec<char>>();
-        return input_line.chars().any(|c| negative.contains(&c));
+        return !input_line.chars().any(|c| negative.contains(&c));
     } else {
         panic!("Unhandled pattern: {}", pattern)
     }
