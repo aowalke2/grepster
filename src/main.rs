@@ -10,14 +10,15 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
     } else if pattern == "\\w" {
         return input_line.contains(|c: char| c.is_alphanumeric());
     } else if pattern.starts_with("[^") && pattern.ends_with("]") {
-        let pattern = pattern.trim_matches(['[', ']']);
-        let pattern = pattern.trim_start_matches(|c| c == '^');
-        let negative = pattern.chars().collect::<Vec<char>>();
-        return input_line.chars().any(|c| !negative.contains(&c));
+        let pattern = pattern.trim_start_matches("[^");
+        let pattern = pattern.trim_end_matches(']');
+        let pattern_chars = pattern.chars().collect::<Vec<char>>();
+        return input_line.chars().any(|c| !pattern_chars.contains(&c));
     } else if pattern.starts_with("[") && pattern.ends_with("]") {
-        let pattern = pattern.trim_matches(['[', ']']);
-        let positive = pattern.chars().collect::<Vec<char>>();
-        return input_line.chars().any(|c| positive.contains(&c));
+        let pattern = pattern.trim_start_matches("[^");
+        let pattern = pattern.trim_end_matches(']');
+        let pattern_chars = pattern.chars().collect::<Vec<char>>();
+        return input_line.chars().any(|c| pattern_chars.contains(&c));
     } else {
         panic!("Unhandled pattern: {}", pattern)
     }
