@@ -92,10 +92,10 @@ fn parse_patterns(pattern: &str) -> Vec<Pattern> {
 
 fn parse_character_group(chars: &mut Chars) -> (bool, String) {
     let mut group = String::new();
-    let mut is_positvie = true;
+    let mut is_positive = true;
 
-    if chars.next().is_some_and(|c| c == '^') {
-        is_positvie = false;
+    if chars.clone().next().is_some_and(|c| c == '^') {
+        is_positive = false;
         chars.next();
     }
 
@@ -106,7 +106,7 @@ fn parse_character_group(chars: &mut Chars) -> (bool, String) {
             break;
         }
     }
-    (is_positvie, group)
+    (is_positive, group)
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
