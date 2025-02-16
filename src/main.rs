@@ -10,7 +10,7 @@ pub enum Pattern {
     Alphanumeric,
     CharacterGroup(bool, String),
     Start(String),
-    End,
+    End(String),
 }
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
@@ -21,27 +21,27 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
         for pattern in patterns.iter() {
             match pattern {
                 Pattern::Literal(literal) => {
-                    if !match_literal(chars, *literal) {
+                    if !chars.next().is_some_and(|c| c == *literal) {
                         continue 'outer;
                     }
                 }
                 Pattern::Digit => {
-                    if !match_digit(chars) {
+                    if !chars.next().is_some_and(|c| c.is_numeric()) {
                         continue 'outer;
                     }
                 }
                 Pattern::Alphanumeric => {
-                    if !match_alphanumeric(chars) {
+                    if !chars.next().is_some_and(|c| c.is_alphanumeric()) {
                         continue 'outer;
                     }
                 }
                 Pattern::CharacterGroup(is_positive, group) => {
-                    if match_group(chars, group) != *is_positive {
+                    if chars.next().is_some_and(|c| group.contains(c)) != *is_positive {
                         continue 'outer;
                     }
                 }
-                Pattern::Start(string) => return match_start(&mut input_line.chars(), string),
-                Pattern::End => todo!(),
+                Pattern::Start(string) => return chars.collect::<String>().as_str() == string,
+                Pattern::End(string) => return chars.collect::<String>().as_str() == string,
             }
         }
         return true;
@@ -49,36 +49,24 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
     return false;
 }
 
-fn match_literal(chars: &mut Chars, literal: char) -> bool {
-    chars.next().is_some_and(|c| c == literal)
-}
-
-fn match_digit(chars: &mut Chars) -> bool {
-    chars.next().is_some_and(|c| c.is_numeric())
-}
-
-fn match_alphanumeric(chars: &mut Chars) -> bool {
-    chars.next().is_some_and(|c| c.is_alphanumeric())
-}
-
-fn match_group(chars: &mut Chars, group: &str) -> bool {
-    chars.next().is_some_and(|c| group.contains(c))
-}
-
-fn match_start(chars: &mut Chars, string: &str) -> bool {
-    chars.collect::<String>().as_str() == string
-}
-
 fn parse_patterns(pattern: &str) -> Vec<Pattern> {
-    let mut chars = pattern.chars();
     let mut patterns = Vec::new();
+    if pattern.starts_with('^') {
+        patterns.push(Pattern::Start(pattern.chars().skip(1).collect()));
+        return patterns;
+    }
+
+    if pattern.ends_with('$') {
+        patterns.push(Pattern::End(
+            pattern.chars().take(pattern.chars().count() - 1).collect(),
+        ));
+        return patterns;
+    }
+
+    let mut chars = pattern.chars();
 
     while let Some(c) = chars.next() {
         match c {
-            '^' => {
-                patterns.push(Pattern::Start(chars.clone().collect::<String>()));
-                break;
-            }
             '\\' => {
                 let special = chars.next();
                 if special.is_none() {
