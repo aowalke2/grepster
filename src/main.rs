@@ -1,27 +1,112 @@
 use std::env;
 use std::io;
 use std::process;
+use std::str::Chars;
+
+pub enum Pattern {
+    Literal(char),
+    Digit,
+    Alphanumeric,
+    CharacterGroup(bool, String),
+}
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    if pattern.chars().count() == 1 {
-        return input_line.contains(pattern);
-    } else if pattern == "\\d" {
-        return input_line.contains(|c: char| c.is_numeric());
-    } else if pattern == "\\w" {
-        return input_line.contains(|c: char| c.is_alphanumeric());
-    } else if pattern.starts_with("[^") && pattern.ends_with("]") {
-        let pattern = pattern.trim_start_matches("[^");
-        let pattern = pattern.trim_end_matches(']');
-        let pattern_chars = pattern.chars().collect::<Vec<char>>();
-        return input_line.chars().any(|c| !pattern_chars.contains(&c));
-    } else if pattern.starts_with("[") && pattern.ends_with("]") {
-        let pattern = pattern.trim_start_matches("[^");
-        let pattern = pattern.trim_end_matches(']');
-        let pattern_chars = pattern.chars().collect::<Vec<char>>();
-        return input_line.chars().any(|c| pattern_chars.contains(&c));
-    } else {
-        panic!("Unhandled pattern: {}", pattern)
+    let patterns = parse_patterns(pattern);
+    let input_line = input_line.trim_matches('\n');
+    'outer: for i in 0..input_line.len() {
+        let chars = &mut input_line[i..].chars();
+        for pattern in patterns.iter() {
+            match pattern {
+                Pattern::Literal(literal) => {
+                    if !match_literal(chars, *literal) {
+                        continue 'outer;
+                    }
+                }
+                Pattern::Digit => {
+                    if !match_digit(chars) {
+                        continue 'outer;
+                    }
+                }
+                Pattern::Alphanumeric => {
+                    if !match_alphanumeric(chars) {
+                        continue 'outer;
+                    }
+                }
+                Pattern::CharacterGroup(is_positive, group) => {
+                    if match_group(chars, group) != *is_positive {
+                        continue 'outer;
+                    }
+                }
+            }
+        }
+        return true;
     }
+    return false;
+}
+
+fn match_literal(chars: &mut Chars, literal: char) -> bool {
+    chars.next().is_some_and(|c| c == literal)
+}
+
+fn match_digit(chars: &mut Chars) -> bool {
+    chars.next().is_some_and(|c| c.is_numeric())
+}
+
+fn match_alphanumeric(chars: &mut Chars) -> bool {
+    chars.next().is_some_and(|c| c.is_alphanumeric())
+}
+
+fn match_group(chars: &mut Chars, group: &str) -> bool {
+    chars.next().is_some_and(|c| group.contains(c))
+}
+
+fn parse_patterns(pattern: &str) -> Vec<Pattern> {
+    let mut chars = pattern.chars();
+    let mut patterns = Vec::new();
+
+    while let Some(c) = chars.next() {
+        let pattern = match c {
+            '\\' => {
+                let special = chars.next();
+                if special.is_none() {
+                    panic!("Incomplete special character")
+                }
+                match special.unwrap() {
+                    'd' => Pattern::Digit,
+                    'w' => Pattern::Alphanumeric,
+                    '\\' => Pattern::Literal('\\'),
+                    _ => panic!("Invalid special character"),
+                }
+            }
+            '[' => {
+                let (is_positive, group) = parse_character_group(&mut chars);
+                Pattern::CharacterGroup(is_positive, group)
+            }
+            c => Pattern::Literal(c),
+        };
+        patterns.push(pattern);
+    }
+
+    patterns
+}
+
+fn parse_character_group(chars: &mut Chars) -> (bool, String) {
+    let mut group = String::new();
+    let mut is_positvie = true;
+
+    if chars.peekable().peek().is_some_and(|c| *c == '^') {
+        is_positvie = false;
+        chars.next();
+    }
+
+    while let Some(c) = chars.next() {
+        if c != ']' {
+            group.push(c);
+        } else {
+            break;
+        }
+    }
+    (is_positvie, group)
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
