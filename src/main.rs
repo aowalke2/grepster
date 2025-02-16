@@ -3,11 +3,14 @@ use std::io;
 use std::process;
 use std::str::Chars;
 
+#[derive(Debug)]
 pub enum Pattern {
     Literal(char),
     Digit,
     Alphanumeric,
     CharacterGroup(bool, String),
+    Start(String),
+    End,
 }
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
@@ -37,6 +40,8 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
                         continue 'outer;
                     }
                 }
+                Pattern::Start(string) => return match_start(&mut input_line.chars(), string),
+                Pattern::End => todo!(),
             }
         }
         return true;
@@ -60,31 +65,38 @@ fn match_group(chars: &mut Chars, group: &str) -> bool {
     chars.next().is_some_and(|c| group.contains(c))
 }
 
+fn match_start(chars: &mut Chars, string: &str) -> bool {
+    chars.collect::<String>().as_str() == string
+}
+
 fn parse_patterns(pattern: &str) -> Vec<Pattern> {
     let mut chars = pattern.chars();
     let mut patterns = Vec::new();
 
     while let Some(c) = chars.next() {
-        let pattern = match c {
+        match c {
+            '^' => {
+                patterns.push(Pattern::Start(chars.clone().collect::<String>()));
+                break;
+            }
             '\\' => {
                 let special = chars.next();
                 if special.is_none() {
                     panic!("Incomplete special character")
                 }
                 match special.unwrap() {
-                    'd' => Pattern::Digit,
-                    'w' => Pattern::Alphanumeric,
-                    '\\' => Pattern::Literal('\\'),
+                    'd' => patterns.push(Pattern::Digit),
+                    'w' => patterns.push(Pattern::Alphanumeric),
+                    '\\' => patterns.push(Pattern::Literal('\\')),
                     _ => panic!("Invalid special character"),
                 }
             }
             '[' => {
                 let (is_positive, group) = parse_character_group(&mut chars);
-                Pattern::CharacterGroup(is_positive, group)
+                patterns.push(Pattern::CharacterGroup(is_positive, group))
             }
-            c => Pattern::Literal(c),
+            c => patterns.push(Pattern::Literal(c)),
         };
-        patterns.push(pattern);
     }
 
     patterns
@@ -122,8 +134,10 @@ fn main() {
     io::stdin().read_line(&mut input_line).unwrap();
 
     if match_pattern(&input_line, &pattern) {
+        println!("0");
         process::exit(0)
     } else {
+        println!("1");
         process::exit(1)
     }
 }
