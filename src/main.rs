@@ -94,7 +94,7 @@ fn parse_character_group(chars: &mut Chars) -> (bool, String) {
     let mut group = String::new();
     let mut is_positvie = true;
 
-    if chars.peekable().peek().is_some_and(|c| *c == '^') {
+    if chars.next().is_some_and(|c| c == '^') {
         is_positvie = false;
         chars.next();
     }
