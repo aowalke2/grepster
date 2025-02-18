@@ -1,112 +1,159 @@
 use std::env;
 use std::io;
+use std::iter::Peekable;
 use std::process;
+use std::slice;
 use std::str::Chars;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Pattern {
     Literal(char),
+    OneOrMore(char),
     Digit,
     Alphanumeric,
-    CharacterGroup(bool, String),
-    Start(String),
-    End(String),
+    PositiveCharacterGroup(String),
+    NegativeCharacterGroup(String),
+    Start,
+    End,
 }
 
-fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    let patterns = parse_patterns(pattern);
-    let input_line = input_line.trim_matches('\n');
-    'outer: for i in 0..input_line.len() {
-        let chars = &mut input_line[i..].chars();
-        for pattern in patterns.iter() {
-            match pattern {
-                Pattern::Literal(literal) => {
-                    if !chars.next().is_some_and(|c| c == *literal) {
-                        continue 'outer;
-                    }
-                }
-                Pattern::Digit => {
-                    if !chars.next().is_some_and(|c| c.is_numeric()) {
-                        continue 'outer;
-                    }
-                }
-                Pattern::Alphanumeric => {
-                    if !chars.next().is_some_and(|c| c.is_alphanumeric()) {
-                        continue 'outer;
-                    }
-                }
-                Pattern::CharacterGroup(is_positive, group) => {
-                    if chars.next().is_some_and(|c| group.contains(c)) != *is_positive {
-                        continue 'outer;
-                    }
-                }
-                Pattern::Start(string) => return chars.collect::<String>().as_str() == string,
-                Pattern::End(string) => return chars.collect::<String>().as_str() == string,
+#[derive(Debug)]
+pub struct Grep {
+    input: String,
+    patterns: Vec<Pattern>,
+}
+
+impl Grep {
+    pub fn new(input_line: &str, pattern: &str) -> Grep {
+        let input = input_line.to_string();
+        let patterns = parse_patterns(pattern);
+        Grep { input, patterns }
+    }
+
+    pub fn match_pattern(&self) -> bool {
+        if self.patterns[0] == Pattern::Start {
+            return match_here(
+                &mut self.input.chars().peekable(),
+                &mut self.patterns[1..].iter(),
+            );
+        }
+
+        for i in 0..self.input.len() {
+            if match_here(
+                &mut self.input[i..].chars().peekable(),
+                &mut self.patterns.iter(),
+            ) {
+                return true;
             }
         }
-        return true;
+
+        false
     }
-    return false;
+}
+
+fn match_here(input: &mut Peekable<Chars>, patterns: &mut slice::Iter<Pattern>) -> bool {
+    match patterns.next() {
+        Some(Pattern::Literal(literal)) => {
+            input.next_if_eq(literal).is_some() && match_here(input, patterns)
+        }
+        Some(Pattern::Digit) => {
+            input.next_if(|&c| c.is_numeric()).is_some() && match_here(input, patterns)
+        }
+        Some(Pattern::Alphanumeric) => {
+            input.next_if(|&c| c.is_alphanumeric()).is_some() && match_here(input, patterns)
+        }
+        Some(Pattern::PositiveCharacterGroup(group)) => {
+            input.next_if(|&c| group.contains(c)).is_some() && match_here(input, patterns)
+        }
+        Some(Pattern::NegativeCharacterGroup(group)) => {
+            input.next_if(|&c| !group.contains(c)).is_some() && match_here(input, patterns)
+        }
+        Some(Pattern::Start) => false,
+        Some(Pattern::End) => input.peek().map_or(true, |&c| c == '\n'),
+        Some(Pattern::OneOrMore(repeated)) => {
+            if input.next_if(|&c| c == *repeated).is_some() {
+                while input.next_if(|&c| c == *repeated).is_some() {}
+                match_here(input, patterns)
+            } else {
+                false
+            }
+        }
+        None => true,
+    }
 }
 
 fn parse_patterns(pattern: &str) -> Vec<Pattern> {
+    let mut pattern_chars = pattern.chars().peekable();
     let mut patterns = Vec::new();
-    if pattern.starts_with('^') {
-        patterns.push(Pattern::Start(pattern.chars().skip(1).collect()));
-        return patterns;
-    }
 
-    if pattern.ends_with('$') {
-        patterns.push(Pattern::End(
-            pattern.chars().take(pattern.chars().count() - 1).collect(),
-        ));
-        return patterns;
-    }
-
-    let mut chars = pattern.chars();
-
-    while let Some(c) = chars.next() {
+    while let Some(&c) = pattern_chars.peek() {
         match c {
             '\\' => {
-                let special = chars.next();
-                if special.is_none() {
-                    panic!("Incomplete special character")
+                pattern_chars.next();
+                if let Some(special) = pattern_chars.next() {
+                    match special {
+                        'd' => patterns.push(Pattern::Digit),
+                        'w' => patterns.push(Pattern::Alphanumeric),
+                        '\\' => patterns.push(Pattern::Literal('\\')),
+                        _ => panic!("Invalid special character"),
+                    }
+                } else {
+                    panic!("Invalid special character");
                 }
-                match special.unwrap() {
-                    'd' => patterns.push(Pattern::Digit),
-                    'w' => patterns.push(Pattern::Alphanumeric),
-                    '\\' => patterns.push(Pattern::Literal('\\')),
-                    _ => panic!("Invalid special character"),
+            }
+            '^' => {
+                if !patterns.is_empty() {
+                    panic!("Start anchor should be first");
                 }
+                pattern_chars.next();
+                patterns.push(Pattern::Start);
+            }
+            '$' => {
+                pattern_chars.next();
+                if let Some(_) = pattern_chars.peek() {
+                    panic!("End anchor should be last");
+                }
+                patterns.push(Pattern::End);
             }
             '[' => {
-                let (is_positive, group) = parse_character_group(&mut chars);
-                patterns.push(Pattern::CharacterGroup(is_positive, group))
+                pattern_chars.next();
+                let mut group = String::new();
+                let mut is_positive = true;
+
+                if pattern_chars.peek() == Some(&'^') {
+                    pattern_chars.next();
+                    is_positive = false;
+                }
+
+                while let Some(&c) = pattern_chars.peek() {
+                    match c {
+                        ']' => {
+                            pattern_chars.next();
+                            break;
+                        }
+                        _ => {
+                            group.push(c);
+                            pattern_chars.next();
+                        }
+                    }
+                }
+                match is_positive {
+                    true => patterns.push(Pattern::PositiveCharacterGroup(group)),
+                    false => patterns.push(Pattern::NegativeCharacterGroup(group)),
+                }
             }
-            c => patterns.push(Pattern::Literal(c)),
+            _ => {
+                pattern_chars.next();
+                if pattern_chars.next_if(|&c| c == '+').is_some() {
+                    patterns.push(Pattern::OneOrMore(c));
+                } else {
+                    patterns.push(Pattern::Literal(c));
+                }
+            }
         };
     }
 
     patterns
-}
-
-fn parse_character_group(chars: &mut Chars) -> (bool, String) {
-    let mut group = String::new();
-    let mut is_positive = true;
-
-    if chars.clone().next().is_some_and(|c| c == '^') {
-        is_positive = false;
-        chars.next();
-    }
-
-    while let Some(c) = chars.next() {
-        if c != ']' {
-            group.push(c);
-        } else {
-            break;
-        }
-    }
-    (is_positive, group)
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
@@ -121,11 +168,10 @@ fn main() {
 
     io::stdin().read_line(&mut input_line).unwrap();
 
-    if match_pattern(&input_line, &pattern) {
-        println!("0");
+    let grep = Grep::new(&input_line, &pattern);
+    if grep.match_pattern() {
         process::exit(0)
     } else {
-        println!("1");
         process::exit(1)
     }
 }
