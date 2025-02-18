@@ -9,6 +9,7 @@ use std::str::Chars;
 pub enum Pattern {
     Literal(char),
     OneOrMore(char),
+    ZeroOrOne(char),
     Digit,
     Alphanumeric,
     PositiveCharacterGroup(String),
@@ -78,6 +79,12 @@ fn match_here(input: &mut Peekable<Chars>, patterns: &mut slice::Iter<Pattern>) 
                 false
             }
         }
+        Some(Pattern::ZeroOrOne(repeated)) => {
+            if input.peek() == Some(repeated) {
+                input.next();
+            }
+            match_here(input, patterns)
+        }
         None => true,
     }
 }
@@ -146,6 +153,8 @@ fn parse_patterns(pattern: &str) -> Vec<Pattern> {
                 pattern_chars.next();
                 if pattern_chars.next_if(|&c| c == '+').is_some() {
                     patterns.push(Pattern::OneOrMore(c));
+                } else if pattern_chars.next_if(|&c| c == '?').is_some() {
+                    patterns.push(Pattern::ZeroOrOne(c));
                 } else {
                     patterns.push(Pattern::Literal(c));
                 }
@@ -170,8 +179,10 @@ fn main() {
 
     let grep = Grep::new(&input_line, &pattern);
     if grep.match_pattern() {
+        println!("0");
         process::exit(0)
     } else {
+        println!("1");
         process::exit(1)
     }
 }
