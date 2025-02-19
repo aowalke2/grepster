@@ -3,15 +3,13 @@ use std::{char, collections::HashMap};
 #[derive(Debug, Clone)]
 pub struct PatternMatch {
     pub matched_text: String,
-    pub index: usize,
     pub sub_matches: HashMap<usize, PatternMatch>,
 }
 
 impl PatternMatch {
-    fn new(matched_text: &str, index: usize) -> Self {
+    fn new(matched_text: &str) -> Self {
         Self {
             matched_text: matched_text.to_string(),
-            index,
             sub_matches: HashMap::new(),
         }
     }
@@ -40,7 +38,7 @@ pub enum Pattern {
     Start,
     End,
     Sequence(Vec<Pattern>),
-    Alternation(Vec<Pattern>, usize),
+    Group(Vec<Pattern>, usize),
     GroupReference(usize),
 }
 
@@ -65,35 +63,35 @@ impl Pattern {
         match self {
             Literal(literal) => match input.chars().nth(index) {
                 Some(c) => match c == *literal {
-                    true => Some(PatternMatch::new(&literal.to_string(), index)),
+                    true => Some(PatternMatch::new(&literal.to_string())),
                     false => None,
                 },
                 None => None,
             },
             Digit => match input.chars().nth(index) {
                 Some(c) => match c.is_numeric() {
-                    true => Some(PatternMatch::new(&c.to_string(), index)),
+                    true => Some(PatternMatch::new(&c.to_string())),
                     false => return None,
                 },
                 None => None,
             },
             Alphanumeric => match input.chars().nth(index) {
                 Some(c) => match c.is_alphanumeric() {
-                    true => Some(PatternMatch::new(&c.to_string(), index)),
+                    true => Some(PatternMatch::new(&c.to_string())),
                     false => return None,
                 },
                 None => None,
             },
             PositiveCharacterGroup(chars) => match input.chars().nth(index) {
                 Some(ch) => match chars.contains(&ch) {
-                    true => Some(PatternMatch::new(&ch.to_string(), index)),
+                    true => Some(PatternMatch::new(&ch.to_string())),
                     false => None,
                 },
                 None => None,
             },
             NegativeCharacterGroup(chars) => match input.chars().nth(index) {
                 Some(ch) => match !chars.contains(&ch) {
-                    true => Some(PatternMatch::new(&ch.to_string(), index)),
+                    true => Some(PatternMatch::new(&ch.to_string())),
                     false => None,
                 },
                 None => None,
@@ -103,7 +101,7 @@ impl Pattern {
                 next_pattern,
             } => {
                 let mut i = index;
-                let mut curr_pattern_match = PatternMatch::new("", index);
+                let mut curr_pattern_match = PatternMatch::new("");
                 let mut curr_matches = matches.clone();
 
                 loop {
@@ -131,7 +129,7 @@ impl Pattern {
                 Some(curr_pattern_match)
             }
             ZeroOrOne(pattern) => {
-                let mut m = PatternMatch::new("", index);
+                let mut m = PatternMatch::new("");
                 match pattern.match_here(input, index, matches) {
                     Some(other) => m.accumulate(&other),
                     None => {}
@@ -141,32 +139,20 @@ impl Pattern {
             Wildcard => input
                 .chars()
                 .nth(index)
-                .map(|c| PatternMatch::new(&c.to_string(), index)),
-            Alternation(patterns, match_index) => {
-                let mut pattern_match = PatternMatch::new("", index);
-                for pattern in patterns {
-                    if let Some(m) = pattern.match_here(input, index, matches) {
-                        pattern_match.accumulate(&m);
-                        pattern_match
-                            .sub_matches
-                            .insert(*match_index, pattern_match.clone());
-                        return Some(pattern_match);
-                    }
-                }
-                None
-            }
+                .map(|c| PatternMatch::new(&c.to_string())),
+
             Start => match index == 0 {
-                true => Some(PatternMatch::new("", index)),
+                true => Some(PatternMatch::new("")),
                 false => None,
             },
             End => match index == input.len() {
-                true => Some(PatternMatch::new("", index)),
+                true => Some(PatternMatch::new("")),
                 false => None,
             },
             Sequence(patterns) => {
                 let mut curr_offset = index;
                 let mut curr_groups = matches.clone();
-                let mut pattern_match = PatternMatch::new("", index);
+                let mut pattern_match = PatternMatch::new("");
 
                 for pattern in patterns {
                     match pattern.match_here(input, curr_offset, &curr_groups) {
@@ -180,11 +166,24 @@ impl Pattern {
                 }
                 Some(pattern_match)
             }
+            Group(patterns, pattern_index) => {
+                let mut pattern_match = PatternMatch::new("");
+                for pattern in patterns {
+                    if let Some(other) = pattern.match_here(input, index, matches) {
+                        pattern_match.accumulate(&other);
+                        pattern_match
+                            .sub_matches
+                            .insert(*pattern_index, pattern_match.clone());
+                        return Some(pattern_match);
+                    }
+                }
+                None
+            }
             GroupReference(pattern_index) => match matches.get(&pattern_index) {
                 Some(matched_text) => {
                     let input = input.chars().skip(index).collect::<String>();
                     if input.starts_with(matched_text) {
-                        Some(PatternMatch::new(&matched_text, index))
+                        Some(PatternMatch::new(&matched_text))
                     } else {
                         None
                     }

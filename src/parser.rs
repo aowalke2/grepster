@@ -47,7 +47,7 @@ impl Parser {
                     pattern
                 }
                 '[' => self.parse_character_group()?,
-                '(' => self.parse_alteration()?,
+                '(' => self.parse_group()?,
                 '^' => {
                     self.current_index += 1;
                     Pattern::Start
@@ -94,12 +94,15 @@ impl Parser {
             let next_prev_pattern = match prev_pattern {
                 Some(prev_pattern) => match prev_pattern {
                     Pattern::OneOrMore {
-                        pattern: m,
+                        pattern: p,
                         next_pattern: _,
                     } => Some(Pattern::OneOrMore {
-                        pattern: m.clone(),
+                        pattern: p.clone(),
                         next_pattern: Some(Box::new(pattern.clone())),
                     }),
+                    Pattern::Group(patterns, pattern_index) => {
+                        self.parse_group_with_one_or_more(patterns, *pattern_index, &pattern)
+                    }
                     _ => None,
                 },
                 None => None,
@@ -148,7 +151,48 @@ impl Parser {
         }
     }
 
-    fn parse_alteration(&mut self) -> Result<Pattern> {
+    fn parse_group_with_one_or_more(
+        &self,
+        patterns: &Vec<Pattern>,
+        pattern_index: usize,
+        next_pattern: &Pattern,
+    ) -> Option<Pattern> {
+        let mut new_patterns = vec![];
+        let mut updated = false;
+
+        for pattern in patterns {
+            let new_pattern = match pattern {
+                Pattern::OneOrMore {
+                    pattern: p,
+                    next_pattern: _,
+                } => {
+                    updated = true;
+                    Pattern::OneOrMore {
+                        pattern: p.clone(),
+                        next_pattern: Some(Box::new(next_pattern.clone())),
+                    }
+                }
+                Pattern::Group(patterns, patten_index) => {
+                    match self.parse_group_with_one_or_more(patterns, *patten_index, &pattern) {
+                        Some(new_group) => {
+                            updated = true;
+                            new_group
+                        }
+                        None => pattern.clone(),
+                    }
+                }
+                _ => pattern.clone(),
+            };
+            new_patterns.push(new_pattern);
+        }
+
+        match updated {
+            true => Some(Pattern::Group(new_patterns, pattern_index)),
+            false => None,
+        }
+    }
+
+    fn parse_group(&mut self) -> Result<Pattern> {
         let (chunks, consumed) = self.split_alternation()?;
         let mut patterns = vec![];
         let next_index = self.next_index;
@@ -162,7 +206,7 @@ impl Parser {
         }
         self.current_index += consumed;
 
-        Ok(Pattern::Alternation(patterns, next_index))
+        Ok(Pattern::Group(patterns, next_index))
     }
 
     fn split_alternation(&self) -> Result<(Vec<String>, usize)> {
